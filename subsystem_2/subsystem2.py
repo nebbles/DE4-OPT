@@ -18,9 +18,10 @@ class Lift:
         self.available = True
         self.arrival_time = 0
         self.passengers = []
+        self.passenger_travel_times = []
         self.rtt = None
         self.queue = []
-        self.history = []
+        self.history = [(0,0)]
 
         self.printing = False
 
@@ -103,11 +104,30 @@ class Lift:
             prev_n = n
         return times
 
-    # def update(self, clock):
-    #     if self.is_available():
-    #         self.check_departure(clock)
-    #     else:
-    #         self.check_arrival(clock)
+    def update_trip_times(self, clock):
+        # sort the passengers in order of requested floor
+        self.passengers = sorted(self.passengers, key=lambda p: p['destination'])
+
+        time = 0
+        prev_n = 0 # start at ground floor
+
+        self.history.append((clock, 0))
+
+        # move to each floor
+        for p in self.passengers:
+            n = p['destination']
+            time += self.travel_time(n-prev_n)
+            p['time.travelling'] = time
+            self.passenger_travel_times.append(time)
+            self.history.append((time+clock, n))
+            prev_n = n
+        
+        # return to ground
+        n = 0
+        time += self.travel_time(abs(0-prev_n))
+        self.history.append((time+clock, n))
+        
+        return time # RTT
 
     def check_departure(self, clock):
         """Will load any waiting passengers into the lift until full. Will depart when at full capacity, or when reached the departure threshold and there are no waiting passengers."""
@@ -119,9 +139,18 @@ class Lift:
             else:
                 # lift must depart
                 self.depart(clock)
+                return
 
         if len(self.passengers) >= self.capacity_threshold*self.capacity:
             self.depart(clock)
+            return
+
+        # depart if waiting for too long
+        if len(self.passengers) > 0:
+            recent_p = max(self.passengers, key=lambda p: p['time.enter_lift'])
+            waiting_time = clock - recent_p['time.enter_lift']
+            if waiting_time > 10: # depart after 10 seconds of waiting
+                self.depart(clock)
 
     def depart(self, clock):
         """Handles the departure of the lift."""
@@ -131,7 +160,7 @@ class Lift:
         for p in self.passengers:
             p['time.departure'] = clock
         # update trip times for all passengers and return RTT for lift
-        self.rtt = self.update_trip_times()
+        self.rtt = self.update_trip_times(clock)
         # set when lift will next be available in the lobby
         self.arrival_time = math.ceil(clock + self.rtt)
         self.log("Lift {} is departing. RTT = {} ETA: {}".format(
@@ -148,20 +177,6 @@ class Lift:
             return completed_passengers
         else:
             return []
-
-    def update_trip_times(self):
-    
-        # sort the passengers in order of requested floor
-        self.passengers = sorted(self.passengers, key=lambda d: d['destination'])
-
-        time = 0
-        prev_n = 0
-        for p in self.passengers:
-            n = p['destination']
-            time += self.travel_time(n-prev_n)
-            p['time.travelling'] = time
-            prev_n = n
-        return time
     
     def add_passenger(self, passenger):
         if len(self.passengers) < self.capacity and self.available:
