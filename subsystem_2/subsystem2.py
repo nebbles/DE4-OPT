@@ -1,4 +1,8 @@
 import math
+import numpy as np
+import copy
+from timeit import default_timer as timer
+
 
 class Lift:
     """The Lift class helps to define mechanical characteristics of a single lift unit.
@@ -21,7 +25,11 @@ class Lift:
         self.passenger_travel_times = []
         self.rtt = None
         self.queue = []
-        self.history = [(0,0)]
+        self.loc_history = [(0,0)]
+
+        self.history = {
+            'queue_length':[]
+        }
 
         self.printing = False
 
@@ -111,7 +119,7 @@ class Lift:
         time = 0
         prev_n = 0 # start at ground floor
 
-        self.history.append((clock, 0))
+        self.loc_history.append((clock, 0))
 
         # move to each floor
         for p in self.passengers:
@@ -119,16 +127,19 @@ class Lift:
             time += self.travel_time(n-prev_n)
             p['time.travelling'] = time
             self.passenger_travel_times.append(time)
-            self.history.append((time+clock, n))
+            self.loc_history.append((time+clock, n))
             prev_n = n
         
         # return to ground
         n = 0
         time += self.travel_time(abs(0-prev_n))
-        self.history.append((time+clock, n))
+        self.loc_history.append((time+clock, n))
         
         return time # RTT
 
+    def update(self):
+        self.history['queue_length'].append(len(self.queue))
+    
     def check_departure(self, clock):
         """Will load any waiting passengers into the lift until full. Will depart when at full capacity, or when reached the departure threshold and there are no waiting passengers."""
         if len(self.queue) > 0:
@@ -187,8 +198,177 @@ class Lift:
             return False
 
     def queue_passenger(self, passenger, clock):
+        if passenger['id'] in range(5):
+            print("Passenger {} was assigned to lift {}".format(passenger['id'],self.id))
         passenger['time.lobby'] = clock
+        passenger['lift.id'] = self.id
         self.queue.append(passenger)
         self.log("A passenger is waiting to get into Lift {}".format(self.id))
         if len(self.queue) > 10:
             self.log("  ALERT > There are more than 10 people waiting to get in the lift")
+
+
+class Simulation:
+    def __init__(self, id_n, iterations=60*60):
+        self.id = id_n
+        self.iterations = iterations
+        self.clock = 0
+        self.floors = 100
+        self.number_of_lifts = 8
+        self.lift_capacity = 10
+        self.departure_capacity_threshold = 0.8
+
+        self.traffic = None
+        self.assignment_func = None
+        self.arrivals = []
+        self.q = []
+        self.lifts = []
+        self.assignment_times = []
+        for i in range(self.number_of_lifts):
+            self.lifts.append(Lift(id=i,
+                                   capacity=self.lift_capacity,
+                                   capacity_threshold=self.departure_capacity_threshold))
+
+        for lift in self.lifts:
+            lift.set_print(False)
+
+    def assign_greedy(self, passenger):
+        # assign to the shortest lift queue
+        lifts_by_queue_length = sorted(
+            self.lifts, key=lambda lift: lift.get_queue_length())
+        lifts_by_queue_length[0].queue_passenger(passenger, self.clock)
+
+    def assign_nearest_lift(self, passenger):
+        # assign to the queue of nearest lift unless the queue has reached capacity
+        lifts_by_proximity = sorted(
+            self.lifts, key=lambda lift: lift.get_arrival_time())
+        for lift in lifts_by_proximity:
+            if lift.get_queue_length() < lift.capacity:
+                lift.queue_passenger(passenger, self.clock)
+                return
+
+        # all lift queues are at least as long as lift capacity
+        self.assign_greedy(passenger)
+
+    def assign_grouping(self, passenger):
+        # order lifts by the average destination floor of each lift
+
+        # establish lifts that will have no other passengers yet
+        empty_lifts = [l for l in self.lifts if l.get_avg_floor() == 0]
+
+        # order lifts by the distance between passenger destination floor
+        # and average destination floor of each lift
+        lbnaf = sorted(self.lifts, key=lambda lift: abs(
+            lift.get_avg_floor()-passenger['destination']))
+
+        # best case, there is empty lift to fall back on
+        if len(empty_lifts) > 0:
+            if lbnaf[0].get_avg_floor() < 5:
+                # if best lift is within a 5 floor threshold, then add the passenger
+                lbnaf[0].queue_passenger(passenger, self.clock)
+            else:
+                # revert to just assigning them to their own lift
+                empty_lifts[0].queue_passenger(passenger, self.clock)
+
+        # no free lifts, so we put them in the most suitable one
+        else:
+            lbnaf[0].queue_passenger(passenger, self.clock)
+
+    def assign_random(self, passenger):
+        # assign to a random lift
+        r = np.random.randint(0, self.number_of_lifts)
+        self.lifts[r].queue_passenger(passenger, self.clock)
+
+    def set_traffic(self, t):
+        self.total_traffic = len(t)
+        self.traffic = copy.deepcopy(t)
+
+    def set_assignment_func(self, name):
+        self.func_name = name
+        if name == 'greedy':
+            self.assignment_func = self.assign_greedy
+        elif name == 'nearest':
+            self.assignment_func = self.assign_nearest_lift
+        elif name == 'grouping':
+            self.assignment_func = self.assign_grouping
+        elif name == 'random':
+            self.assignment_func = self.assign_random
+        else:
+            raise ValueError(
+                'The assignment func name \'{}\' is not recognised.'.format(name))
+
+    def test(self):
+        print("test func")
+
+    def run(self):
+        if self.traffic is None:
+            raise TypeError(
+                'Traffic variable has not been set for the simulation.')
+        if self.assignment_func is None:
+            raise TypeError(
+                'Assignment function has not been set for the simulation.')
+
+        while self.clock < self.iterations:
+            self.step()
+
+            if len(self.arrivals) == self.total_traffic:
+                print("All traffic has arrived. Ending simulation early.")
+                break
+
+        print("-----------------------------------")
+        print("SIMULATION COMPLETE")
+        print("Assignment function:      {}".format(self.func_name))
+        print("Duration of simulation:   {}".format(self.clock))
+        print("Maximum duration allowed: {}".format(self.iterations))
+        print("Total passengers arrived: {}".format(len(self.arrivals)))
+        print("Total traffic:            {} (+{})".format(self.total_traffic,
+                                                          self.total_traffic-len(self.arrivals)))
+        print("Percentage processed:     {:2.0f}%".format(
+            len(self.arrivals)/self.total_traffic*100))
+        # print("Throughput (people/sec):  {:.4f}".format(len(self.arrivals)/self.iterations))
+        print("-----------------------------------")
+
+    def step(self):
+        # NEW ARRIVALS
+        # move new arrivals from traffic into the queue
+        while len(self.traffic) > 0:
+            user = self.traffic[0]
+            if user['time.start'] > self.clock:
+                break  # user has not arrived at building yet
+            else:
+                # user has arrived at the building
+                self.q.append(self.traffic.pop(0))
+
+        # ASSIGNMENT ALGORITHM
+        # Assign each person in the queue according to limits
+        # 2 to 4 people per second can be allocated a lift
+        for _ in range(np.random.randint(2, 5)):
+            if len(self.q) > 0:
+                waiting_passenger = self.q.pop(0)  # remove from the queue
+                start = timer()
+                self.assignment_func(waiting_passenger)  # assign passenger
+                end = timer()
+                self.assignment_times.append(end-start)
+            else:
+                break
+
+        # UPDATE THE LIFT STATES
+        # Check departure/arrival for all lifts
+
+        for lift in self.lifts:
+            lift.update()
+            if lift.is_available():
+                lift.check_departure(self.clock)
+            else:
+                self.arrivals += lift.check_arrival(self.clock)
+
+        # ITERATE THE CLOCK
+        self.clock += 1
+
+        # LIVE GRAPH
+        # ax1.clear()
+        # ax1.bar(range(5), [lift.get_total_passengers() for lift in lifts])
+        # ax1.set_title('Passenger count')
+        # ax1.set_ylim(0,10)
+        # fig.canvas.draw()
+        # time.sleep(0.01)
