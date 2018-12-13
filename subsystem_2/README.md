@@ -25,4 +25,4 @@ This subsystems code was developed on a Macintosh running macOS 10.14.1 with the
 | Number of Processors:	  1
 | Total Number of Cores:  4
 
-Execution times will be added to the **end of the Jupyter notebook**.
+Execution time is noted at the **end of the Jupyter notebook**. Last run time was approximately 4 seconds.
