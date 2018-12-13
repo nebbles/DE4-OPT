@@ -49,6 +49,7 @@ class Lift:
         self.printing = setting
 
     def set_capacity_threshold(self, ct):
+        """Threshold sets when lift can depart with passengers when queue is empty"""
         if ct is not float:
             raise TypeError('Capacity threshold value must be a float.')
         if ct >= 0 and ct <= 1.0:
@@ -86,6 +87,7 @@ class Lift:
                 return sum([p['destination'] for p in relevant_ps])/len(relevant_ps) # average
 
     def get_ett(self, passenger):
+        """Calculates the expected travel time of passenger"""
         running_order = self.passengers + self.queue
         total = len(running_order)
         if total == 0:
@@ -105,6 +107,7 @@ class Lift:
             return self.comp_travel(flrs)[-1]
 
     def get_ewt(self):
+        """Gets current expected waiting time for lift"""
         running_order = self.passengers + self.queue
         total = len(running_order)
         if total == 0:
@@ -115,8 +118,6 @@ class Lift:
         relevant_ps = running_order[:div*self.capacity]
 
         if len(relevant_ps) > 0:
-            # print("relevant p ")
-            # pprint(relevant_ps)
             total_wt = 0
             # split into capacity size chunks and compute waiting time via rtt
             for i in range(0, len(relevant_ps), self.capacity):
@@ -161,6 +162,7 @@ class Lift:
         return times
 
     def update_trip_times(self, clock):
+        """Updates time stamp of passengers for duration of travel time and returns the round trip time of the lift to the caller"""
         # sort the passengers in order of requested floor
         self.passengers = sorted(self.passengers, key=lambda p: p['destination'])
 
@@ -186,6 +188,7 @@ class Lift:
         return time # RTT
 
     def update(self):
+        """Housekeeping tasks for lift object"""
         self.history['queue_length'].append(len(self.queue))
     
     def check_departure(self, clock):
@@ -226,6 +229,7 @@ class Lift:
                 self.id, self.rtt, self.arrival_time))
 
     def check_arrival(self, current_time):
+        """Checks if arrival of lift is due, and when it does arrive, returns all the passengers that have been delivered to their floors to the caller"""
         if current_time == self.arrival_time:
             for p in self.passengers:
                 p['time.arrival'] = current_time 
@@ -238,6 +242,7 @@ class Lift:
             return []
     
     def add_passenger(self, passenger):
+        """Boards a passenger onto the lift"""
         if len(self.passengers) < self.capacity and self.available:
             self.passengers.append(passenger)
             self.log("Lift {} just added passenger going to floor {}".format(self.id, passenger['destination']))
@@ -246,6 +251,7 @@ class Lift:
             return False
 
     def queue_passenger(self, passenger, clock):
+        """Puts passenger in queue to wait for boarding"""
         passenger['time.lobby'] = clock
         passenger['lift.id'] = self.id
         self.queue.append(passenger)
@@ -278,10 +284,12 @@ class Simulation:
             lift.set_print(False)
 
     def set_traffic(self, t):
+        """Takes a complete unique copy of the passenger traffic data provided for the simulation"""
         self.total_traffic = len(t)
         self.traffic = copy.deepcopy(t)
 
     def set_assignment_func(self, name):
+        """Assigns common assignment allocation names to function handles in the class"""
         self.func_name = name
         if name == 'greedy':
             self.assignment_func = self.assign_greedy
@@ -300,12 +308,14 @@ class Simulation:
                 'The assignment func name \'{}\' is not recognised.'.format(name))
 
     def assign_greedy(self, passenger):
+        """Assignment method assigns passenger to the lift with the shortest queue"""
         # assign to the shortest lift queue
         lifts_by_queue_length = sorted(
             self.lifts, key=lambda lift: lift.get_queue_length())
         lifts_by_queue_length[0].queue_passenger(passenger, self.clock)
 
     def assign_nearest_lift(self, passenger):
+        """Assigns passenger to lift in order of soonest arrival time in the lobby, as long as the queue length is less than the lift capacity. If this fails, falls back to 'greedy' assignment."""
         # assign to the queue of nearest lift unless the queue has reached capacity
         lifts_by_proximity = sorted(
             self.lifts, key=lambda lift: lift.get_arrival_time())
@@ -318,6 +328,7 @@ class Simulation:
         self.assign_greedy(passenger)
 
     def assign_grouping(self, passenger):
+        """Assigns passenger based on if the lift with the nearest mean average destination is within a certain threshold. If not it may try to assign the passenger to an empty lift."""
         # order lifts by the average destination floor of each lift
 
         # establish lifts that will have no other passengers yet
@@ -345,25 +356,18 @@ class Simulation:
             return
 
     def assign_random(self, passenger):
+        """Randomly assigns passenger to a lift"""
         # assign to a random lift
         r = np.random.randint(0, self.number_of_lifts)
         self.lifts[r].queue_passenger(passenger, self.clock)
 
     def assign_journeytime(self, passenger):
-        # for each lift
-        # for lift in self.lifts:
-            # lift.get_eet(passenger)
-            # print(lift.get_ewt())
-        # calculate the expected travel time
-        # calculate the expected wait time
-
+        """Assigns passenger to lift with the smallest expected journey time (travel + waiting)"""
         lifts_ett = sorted(self.lifts, key=lambda l: l.get_ett(passenger)+l.get_ewt())
         lifts_ett[0].queue_passenger(passenger, self.clock)
-
-        # print(self.lifts[0].get_ett(passenger))
-        # self.assign_grouping(passenger)
         
     def assign_grouping_advanced(self, passenger):
+        """Assigns passengers to non-full lifts if grouping matches. If not, tries to find an empty lift. Then will try to group with the available queues of lifts. Then tries to find assign to a queue that is empty. Fallback is to assign to shortest queue."""
         # order lifts by the average destination floor of each lift
 
         t1 = [l for l in self.lifts if len(l.passengers) < l.capacity]
@@ -391,10 +395,8 @@ class Simulation:
         shortest_queue = sorted(self.lifts, key=lambda l: len(l.passengers)+len(l.queue))[0]
         shortest_queue.queue_passenger(passenger, self.clock)
 
-    def test(self):
-        print("test func")
-
     def run(self):
+        """Main simulation run method. Simulation runs and then a report is printed"""
         if self.traffic is None:
             raise TypeError(
                 'Traffic variable has not been set for the simulation.')
@@ -427,6 +429,7 @@ class Simulation:
         print("└"+"─" * (lline+2) + "┘")
 
     def step(self):
+        """Method called for each step of the simulation loop"""
         # NEW ARRIVALS
         # move new arrivals from traffic into the queue
         while len(self.traffic) > 0:
@@ -452,7 +455,6 @@ class Simulation:
 
         # UPDATE THE LIFT STATES
         # Check departure/arrival for all lifts
-
         for lift in self.lifts:
             lift.update()
             if lift.is_available():
@@ -463,7 +465,7 @@ class Simulation:
         # ITERATE THE CLOCK
         self.clock += 1
 
-        # LIVE GRAPH
+        # LIVE GRAPH (DEPRECATED -- UNNECESSARY)
         # ax1.clear()
         # ax1.bar(range(5), [lift.get_total_passengers() for lift in lifts])
         # ax1.set_title('Passenger count')
