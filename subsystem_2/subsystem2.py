@@ -1,7 +1,9 @@
-import math
-import numpy as np
 import copy
+import math
+from pprint import pprint
 from timeit import default_timer as timer
+
+import numpy as np
 
 
 class Lift:
@@ -75,13 +77,58 @@ class Lift:
             return sum([p['destination'] for p in running_order])/total # average destination
         
         else:
-            rem = total % self.capacity # calculate remainder
-            if rem == 0:
+            div = total // self.capacity # calculate remainder
+            # relevant passengers to caller
+            relevant_ps = running_order[div*self.capacity:]
+            if len(relevant_ps) == 0:
                 return 0  # avg floor is irrelevant to the caller
             else:
-                relevant_ps = running_order[-rem:] # relevant passengers to caller
                 return sum([p['destination'] for p in relevant_ps])/len(relevant_ps) # average
 
+    def get_ett(self, passenger):
+        running_order = self.passengers + self.queue
+        total = len(running_order)
+        if total == 0:
+            flrs = [0, passenger['destination']]
+            return self.comp_travel(flrs)[-1]
+        
+        div = total // self.capacity  # calculate remainder
+        relevant_ps = running_order[div*self.capacity:]  # relevant passengers to caller
+
+        if len(relevant_ps) > 0:
+            ds = [p['destination'] for p in relevant_ps if p['destination'] < passenger['destination']]
+            flrs = [0]+ds+[passenger['destination']]
+            return self.comp_travel(flrs)[-1]
+        
+        else:
+            flrs = [0, passenger['destination']]
+            return self.comp_travel(flrs)[-1]
+
+    def get_ewt(self):
+        running_order = self.passengers + self.queue
+        total = len(running_order)
+        if total == 0:
+            return 0
+
+        div = total // self.capacity  # calculate remainder
+        # relevant passengers to caller
+        relevant_ps = running_order[:div*self.capacity]
+
+        if len(relevant_ps) > 0:
+            # print("relevant p ")
+            # pprint(relevant_ps)
+            total_wt = 0
+            # split into capacity size chunks and compute waiting time via rtt
+            for i in range(0, len(relevant_ps), self.capacity):
+                subgroup = relevant_ps[i:i + self.capacity]
+                sgds = [p['destination'] for p in subgroup] # subgroup destinations
+                wt = self.comp_travel([0]+sgds+[0])[-1]
+                total_wt += wt
+
+            return total_wt
+
+        else:
+            return 0
 
     def travel_time(self, n):
         """travel_time(n) calculates total time taken (seconds) to travel n integer floors this included closing of the doors and opening at the destination.
@@ -103,6 +150,7 @@ class Lift:
     def comp_travel(self, floors):
         """Calculates travel times taken to reach each target floor. List must include starting floor. Corresponding travel time for that floor will be 0. The floors must be in correct order."""
 
+        floors.sort()
         time = 0
         times = [time]
         prev_n = floors[0]
@@ -243,6 +291,10 @@ class Simulation:
             self.assignment_func = self.assign_grouping
         elif name == 'random':
             self.assignment_func = self.assign_random
+        elif name == 'journey':
+            self.assignment_func = self.assign_journeytime
+        elif name == 'adv grp':
+            self.assignment_func = self.assign_grouping_advanced
         else:
             raise ValueError(
                 'The assignment func name \'{}\' is not recognised.'.format(name))
@@ -278,21 +330,66 @@ class Simulation:
 
         # best case, there is empty lift to fall back on
         if len(empty_lifts) > 0:
-            if lbnaf[0].get_avg_floor() < 5:
+            if abs(lbnaf[0].get_avg_floor()-passenger['destination']) < 5:
                 # if best lift is within a 5 floor threshold, then add the passenger
                 lbnaf[0].queue_passenger(passenger, self.clock)
+                return
             else:
                 # revert to just assigning them to their own lift
                 empty_lifts[0].queue_passenger(passenger, self.clock)
+                return
 
         # no free lifts, so we put them in the most suitable one
         else:
             lbnaf[0].queue_passenger(passenger, self.clock)
+            return
 
     def assign_random(self, passenger):
         # assign to a random lift
         r = np.random.randint(0, self.number_of_lifts)
         self.lifts[r].queue_passenger(passenger, self.clock)
+
+    def assign_journeytime(self, passenger):
+        # for each lift
+        # for lift in self.lifts:
+            # lift.get_eet(passenger)
+            # print(lift.get_ewt())
+        # calculate the expected travel time
+        # calculate the expected wait time
+
+        lifts_ett = sorted(self.lifts, key=lambda l: l.get_ett(passenger)+l.get_ewt())
+        lifts_ett[0].queue_passenger(passenger, self.clock)
+
+        # print(self.lifts[0].get_ett(passenger))
+        # self.assign_grouping(passenger)
+        
+    def assign_grouping_advanced(self, passenger):
+        # order lifts by the average destination floor of each lift
+
+        t1 = [l for l in self.lifts if len(l.passengers) < l.capacity]
+        t2 = [l for l in self.lifts if len(l.passengers)+len(l.queue) < 2*l.capacity]
+
+        for lift in t1:
+            avg = lift.get_avg_floor()
+            if abs(avg-passenger['destination']) < 5:
+                lift.queue_passenger(passenger, self.clock)
+                return
+            if  avg == 0:
+                lift.queue_passenger(passenger, self.clock)
+                return
+
+        for l in t2:
+            avg = l.get_avg_floor()
+            if abs(avg-passenger['destination']) < 5:
+                l.queue_passenger(passenger, self.clock)
+                return
+            if len(l.passengers)+len(l.queue) <= l.capacity:
+                l.queue_passenger(passenger, self.clock)
+                return
+        
+        # fallback
+        shortest_queue = sorted(self.lifts, key=lambda l: len(l.passengers)+len(l.queue))[0]
+        shortest_queue.queue_passenger(passenger, self.clock)
 
     def test(self):
         print("test func")
