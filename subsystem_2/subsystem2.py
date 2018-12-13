@@ -198,8 +198,6 @@ class Lift:
             return False
 
     def queue_passenger(self, passenger, clock):
-        if passenger['id'] in range(5):
-            print("Passenger {} was assigned to lift {}".format(passenger['id'],self.id))
         passenger['time.lobby'] = clock
         passenger['lift.id'] = self.id
         self.queue.append(passenger)
@@ -213,7 +211,6 @@ class Simulation:
         self.id = id_n
         self.iterations = iterations
         self.clock = 0
-        self.floors = 100
         self.number_of_lifts = 8
         self.lift_capacity = 10
         self.departure_capacity_threshold = 0.8
@@ -231,6 +228,24 @@ class Simulation:
 
         for lift in self.lifts:
             lift.set_print(False)
+
+    def set_traffic(self, t):
+        self.total_traffic = len(t)
+        self.traffic = copy.deepcopy(t)
+
+    def set_assignment_func(self, name):
+        self.func_name = name
+        if name == 'greedy':
+            self.assignment_func = self.assign_greedy
+        elif name == 'nearest':
+            self.assignment_func = self.assign_nearest_lift
+        elif name == 'grouping':
+            self.assignment_func = self.assign_grouping
+        elif name == 'random':
+            self.assignment_func = self.assign_random
+        else:
+            raise ValueError(
+                'The assignment func name \'{}\' is not recognised.'.format(name))
 
     def assign_greedy(self, passenger):
         # assign to the shortest lift queue
@@ -279,24 +294,6 @@ class Simulation:
         r = np.random.randint(0, self.number_of_lifts)
         self.lifts[r].queue_passenger(passenger, self.clock)
 
-    def set_traffic(self, t):
-        self.total_traffic = len(t)
-        self.traffic = copy.deepcopy(t)
-
-    def set_assignment_func(self, name):
-        self.func_name = name
-        if name == 'greedy':
-            self.assignment_func = self.assign_greedy
-        elif name == 'nearest':
-            self.assignment_func = self.assign_nearest_lift
-        elif name == 'grouping':
-            self.assignment_func = self.assign_grouping
-        elif name == 'random':
-            self.assignment_func = self.assign_random
-        else:
-            raise ValueError(
-                'The assignment func name \'{}\' is not recognised.'.format(name))
-
     def test(self):
         print("test func")
 
@@ -315,18 +312,22 @@ class Simulation:
                 print("All traffic has arrived. Ending simulation early.")
                 break
 
-        print("-----------------------------------")
-        print("SIMULATION COMPLETE")
-        print("Assignment function:      {}".format(self.func_name))
-        print("Duration of simulation:   {}".format(self.clock))
-        print("Maximum duration allowed: {}".format(self.iterations))
-        print("Total passengers arrived: {}".format(len(self.arrivals)))
-        print("Total traffic:            {} (+{})".format(self.total_traffic,
-                                                          self.total_traffic-len(self.arrivals)))
-        print("Percentage processed:     {:2.0f}%".format(
+        message = []
+        message.append("SIMULATION COMPLETE")
+        message.append("Assignment function:      {}".format(self.func_name))
+        message.append("Duration of simulation:   {}".format(self.clock))
+        message.append("Maximum duration allowed: {}".format(self.iterations))
+        message.append("Total passengers arrived: {}".format(len(self.arrivals)))
+        message.append("Total traffic:            {} (+{})".format(self.total_traffic,
+                                                                   self.total_traffic-len(self.arrivals)))
+        message.append("Percentage processed:     {:2.0f}%".format(
             len(self.arrivals)/self.total_traffic*100))
-        # print("Throughput (people/sec):  {:.4f}".format(len(self.arrivals)/self.iterations))
-        print("-----------------------------------")
+
+        lline = len(max(message, key=lambda l: len(l)))
+        print("┌"+"─" * (lline+2) + "┐")
+        for line in message:
+            print("│ "+line.ljust(lline)+" │")
+        print("└"+"─" * (lline+2) + "┘")
 
     def step(self):
         # NEW ARRIVALS
