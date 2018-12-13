@@ -1,9 +1,15 @@
-Subsystem 1: Optimising Transport Characteristics of a single lift
+# Subsystem 1: Optimising Transport Characteristics of a single lift
 
-Ben Pheifer
+Author: Ben Pheifer
 
-This README must have:
+**Main Script**
+The Subsystem1.pynb should be run for initial research and proceedings
+The OptiSub1.m script should be run for optimisation results
 
-#. List any software/library prerequisites/dependencies needed to run the code
-#. Specify the main script
-#. Provide an indication of the typical performance (e.g. execution time, with indication of processor and operating system)
+**Execution Time**
+Subsystem1.pynb execution time is approximately 13.6 seconds
+OptiSub1.m execution time is approximately 3.6 seconds
+
+**Dependencies**
+The Subsystem1.pynb requires google_collaboratory or any alternative python notebook reader.
+The OptiSub1.m script requires MATLAB_R2018A
